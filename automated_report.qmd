@@ -1,0 +1,920 @@
+---
+title: "Turnover and Compensation Report"
+editor: visual
+self-contained: true
+
+execute: 
+  echo: false
+  warning: false
+  message: false
+  include: false
+  
+format: 
+  pdf:
+    number-sections: false
+    keep-tex: true
+    fig-format: pdf
+    fig-dpi: 1200
+    fig-cap-location: top
+    fig-align: center
+    fontsize: '12'
+    include-in-header:
+      - "04_assets/report_style.tex"
+
+filters: [04_assets/remove_title.lua]
+
+params:
+  district_lea: 7401000
+---
+
+```{r preamble}
+# Load packages
+library(data.table)
+library(colorspace)
+library(tidyverse)
+library(gtsummary)
+library(showtext)
+library(scales)
+library(ggtext)
+library(gt)
+
+# Load font
+font_add_google("Roboto Condensed", "roboto")
+showtext_auto()
+
+# Call helper functions (if any)
+source("01_code/999_helper_functions.R")
+
+# Call the data prep. scripts (not necessary every time)
+#source("01_code/001_prepare_salary_data.R")
+#source("01_code/002_prepare_turnover_data.R")
+
+# Load prepared data
+load("02_data/turnover_data_prepared.RData")
+#load("02_data/salary_data_prepared.RData")
+
+# Create focal district frame
+focal_dist = districts[district_lea == params$district_lea]
+
+# Creating an empty list object to hold conditional text
+text = list()
+
+# Adding district name and ESC to text list
+text$district = unique(focal_dist$district_name)[1]
+text$esc = unique(focal_dist$esc)[1]
+
+# Setting a "threshold" for saying two rates are "about" the same
+abt_threshold = 0.01
+```
+
+```{=tex}
+\begin{titlepage} 
+    
+  %------------------------------------------------
+  % Title box
+  %------------------------------------------------
+  
+  \parbox[t]{1\paperwidth}{ 
+    \parbox[t]{1\textwidth}{
+        \raggedleft
+        \Huge\headingfont\color{oep_green}
+        \vspace{0.7cm} 
+        
+        Teacher Retention in\\
+        `r text$district`
+        \hfill\rule{\linewidth}{1pt}\\
+        \vspace{0.5cm}
+        
+        \Large\selectfont
+        2023-24 School Year\\
+        
+  
+        \vspace{0.7cm}
+        
+    }
+  }
+  
+  \vfill % Space between the title box and author information
+    
+  %------------------------------------------------
+  % Author name and information
+  %------------------------------------------------
+  \begin{minipage}[t][3cm][b]{0.6\textwidth} % left box
+    \vfill
+    \raggedright % left alignment
+    \includegraphics[width=0.3\textwidth]{04_assets/oep_logo.png}\\
+    \vspace{0.5cm}
+    \includegraphics[width=0.7\textwidth]{04_assets/edre_logo.png}
+  \end{minipage}
+  \hfill % horizontal space
+  \begin{minipage}[t][3cm][b]{0.4\textwidth} % right box
+    \raggedleft % right alignment
+    Prepared by\\[4pt]
+    \large 
+    {\Large Andrew M. Camp}\\[4pt] 
+    %\href{https://oep.uark.edu}{oep.uark.edu}
+  \end{minipage}
+
+\end{titlepage}
+
+%\newpage
+
+% Set TOC title to title case
+%\renewcommand{\contentsname}{Table of Contents}
+%\tableofcontents
+
+% New page for the "about this report" section
+\newpage
+\pagenumbering{arabic}
+\subsection[About This Report]{About This Report}\label{about-this-report}
+```
+Teachers are the [largest school-based factor](https://doi.org/10.26300/RZSY-7158) in student's academic success, but teacher retention has long been a challenge for districts across Arkansas and teacher turnover is [costly for districts](https://eric.ed.gov/?id=ED497176) and may [harm student learning](https://doi.org/10.1016/j.econedurev.2016.08.004). Concerns about the health of the teacher workforce have only grown following the [increased stress](https://doi.org/10.7249/RRA1121-2) and [burnout](https://doi.org/10.26300/2y0g-bw09) experienced by teachers during the COVID-19 pandemic and [approaches to teacher compensation are changing](https://edre.uark.edu/_resources/pdf/changes-in-teacher-salaries-under-the-arkansas-learns-act-research-brief_nov2_final_rb2023-02.pdf) following the LEARNS Act of 2023. In previous work at OEP and the Department of Education Reform, we've highlighted [changes in teacher retention](https://learns.ade.arkansas.gov/File/a34xthsv.pdf) since the beginning of the pandemic and [how districts are adapting](https://oep.uark.edu/teacher-labor-market-research-and-the-arkansas-learns-act/) to the new requirements of the LEARNS Act at the state-level.
+
+**In this report, we examine teacher retention and compensation in `r text$district`.** We include comparisons between how well `r text$district` is retaining teachers and other school districts in the `r text$esc` Educational Service Cooperative (ESC) and across the state. Our goal is to provide information that leaders and school boards will find useful in addressing the unique challenges that their districts may face.
+
+Throughout this report we focus on **teacher retention**, which we define as an individual who worked in `r text$district` in one school year returning to work in the district during the next school year. Because school districts often make staffing decisions based on their specific needs, we consider a teacher as retained even if they move schools within the district or change from a teaching to a non-teaching role (e.g., instructional coach). This definition is slightly different than what we've used in our previous work and, so, the results here may differ somewhat from those reports. However, we believe that this definition provides information that is most useful for district leadership.
+
+We are excited to be able to offer this analysis to your district and hope that the report and accompanying presentation will spark discussion among `r text$district` leadership and stakeholders about how to ensure that all students in Arkansas have an effective teacher to guide their learning.
+
+```{=tex}
+\vfill
+\noindent
+\begin{minipage}{\linewidth}
+\footnotesize\textit{Note: This is part of a series of procedurally generated reports. We conduct several quality checks to make sure that the information presented here is correct. Please contact oep@uark.edu if you have any questions or believe that data used in your district's report may be incorrect.}
+\end{minipage}
+
+\normalsize
+\newpage
+\subsection[Overview of Teacher Retention in `r text$district`]{Teacher Retention in `r text$district` is `r text$avg_ret_dist_v_esc` Average for the `r text$esc` Education Service Cooperative.}\label{retention-comp-esc-graph}
+```
+```{r retention_sub1_preamble}
+# Teacher retention in [district] is [above/below/about] average ...
+d = mean(focal_dist$lf_stayer)
+e = mean(focal_dist$lf_stayer_esc)
+s = mean(focal_dist$lf_stayer_st)
+
+text$avg_ret_dist_v_esc = 
+  case_when(d - e > abt_threshold ~ "Above",
+            e - d > abt_threshold ~ "Below",
+            TRUE ~ "About")
+
+
+# Between... [X%] of [district] teachers remained...
+text$dist_avg_ret = percent(d, accuracy = 0.1)
+
+# ... the average retention in the [esc] cooperative was [esc_avg_ret]...
+text$esc_avg_ret = percent(e, accuracy = 0.1)
+
+# ... and the average retention across the state was [st_avg_ret]
+text$st_avg_ret = percent(s, accuracy = 0.1)
+
+# ... [district] ranks [Yth] out of [K] for teacher retention...
+text$ret_rank_esc = 
+  toOrdinal::toOrdinal(focal_dist$avg_retention_rank_in_esc[1])
+
+text$dist_in_esc = 
+  max(focal_dist$districts_in_esc)
+
+rm(d, e, s)
+
+```
+
+Between the 2016-17 and 2023-24 school years, `r text$dist_avg_ret` of `r text$district` teachers remained in the district each year. During the same period, the average retention in the `r text$esc` Education Service Cooperative (ESC) was `r text$esc_avg_ret` and the average retention across the state was `r text$st_avg_ret`.
+
+```{r avg_retention_graph}
+pal = qualitative_hcl(n = 3, palette = "Dark 2")
+names(pal) = c("Other Arkansas Districts", text$district, text$esc)
+
+dta = focal_dist |>
+  _[, .(district_name, fiscal_year, 
+        lf_stayer, lf_stayer_esc, lf_stayer_st)] |>
+  melt(id.vars = c("district_name", "fiscal_year")) |>
+  _[, variable := case_when(variable == "lf_stayer" ~ text$district,
+                            variable == "lf_stayer_esc" ~ text$esc,
+                            TRUE ~ "Other Arkansas Districts")] |>
+  _[, school_year := fiscal_year + 1991] 
+
+dta_last = dta |>
+  filter(fiscal_year == max(fiscal_year)) |>
+  mutate(color = pal[match(variable, names(pal))],
+         variable = paste0("<b style='color:",
+                           color, "'>",
+                           variable,
+                           "</b>"))
+
+dta |>
+ggplot(aes(x = school_year, y = value, group = variable, color = variable)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = percent, limits = c(0.55, 1),
+                     sec.axis = dup_axis(breaks = dta_last$value,
+                                         labels = dta_last$variable,
+                                         name = NULL,
+                                         guide = guide_axis(n.dodge = 1))) +
+  scale_x_continuous(breaks = c(2017:2024)) +
+  scale_color_manual(values = pal) +
+  ylab("Teacher Retention Rate") +
+  xlab("School Year") +
+  labs(title = paste("Teacher Retention in", text$district),
+       subtitle = paste("vs. the", text$esc, "ESC and Statewide Averages.")) +
+  theme_minimal() +
+  theme(text = element_text(family = "roboto", size = 12),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y.left = element_text(color = "black", size = 12),
+        axis.title.y.left = element_text(color = "#424242", size = 10),
+        axis.text.x = element_text(color = "black", size = 12),
+        axis.title.x = element_text(color = "#424242", size = 10),
+        axis.text.y.right = element_markdown(face = "bold", size = 12,
+                                             margin = margin(l = -10)),
+        panel.grid.minor.x = element_blank())
+  ggsave(filename = "99_tempfiles/fig1.pdf", width = 7, height = 4.25)
+
+rm(pal, dta, dta_last)
+```
+
+```{=tex}
+\vfill
+\begin{figure}
+  \centerfloat
+  \includegraphics[width = 1.2\textwidth]{99_tempfiles/fig1.pdf}
+\end{figure}
+\vfill
+
+
+\newpage
+\subsection[Retention Rank in the `r text$esc` ESC]{Compared to other districts in the `r text$esc` cooperative, `r text$district` ranks `r text$ret_rank_esc` out of `r text$dist_in_esc` for teacher retention.}\label{retention-comp-esc-table}
+```
+```{r retention_sub2_preamble}
+# Compared to all traditional school districts in the state, [district] ranks [rank_in_state] out of [total_n_districts] for teacher retention.
+rst = focal_dist[fiscal_year == max(fiscal_year)]$avg_retention_rank_in_st
+n_dist = focal_dist[fiscal_year == max(fiscal_year)]$districts_in_state
+
+text$rank_in_state = toOrdinal::toOrdinal(rst)
+text$tot_n_districts = n_dist
+
+rm(rst, n_dist)
+```
+
+The average retention rate in the `r text$esc` ESC over the past 8 school years was `r text$esc_avg_ret`.
+
+Compared to all districts in the state, **`r text$district` ranks `r text$rank_in_state` out of `r text$tot_n_districts` for average teacher retention.**
+
+\vspace{2em}
+
+```{r esc_ret_rankings_tbl}
+#| echo: false
+#| include: true
+#| output: asis
+
+# Starting by getting districts in focal district's ESC
+top_ret_dist_esc = districts[esc == text$esc] |>
+  _[, district_name := gsub(" School District", "", district_name)] |>
+  _[fiscal_year == max(fiscal_year)] |>
+  _[, avg_lf_stayer_fmtd := percent(avg_lf_stayer, accuracy = 0.1)] |>
+  arrange(avg_retention_rank_in_esc) |>
+  _[, avg_retention_rank_in_esc := 
+      toOrdinal::toOrdinal(avg_retention_rank_in_esc)] |>
+  _[, avg_retention_rank_in_st := 
+      toOrdinal::toOrdinal(avg_retention_rank_in_st)] |>
+  _[, .(district_lea, district_name, 
+        avg_lf_stayer_fmtd, avg_retention_rank_in_esc,
+        avg_retention_rank_in_st)] |>
+  as.data.frame()
+
+# Renaming to make it nice
+colnames(top_ret_dist_esc) = c("district_lea",
+                               "School District",
+                               "Average Retention",
+                               "Rank in ESC",
+                               "Rank in State")
+
+# Building some parameters before building the table
+bld_row = match(params$district_lea, top_ret_dist_esc$district_lea)
+tbl_title = paste("Teacher Retention in the", text$esc, 
+                  "ESC")
+
+
+# And actually making the table
+gt(top_ret_dist_esc |> select(-district_lea)) |>
+  cols_align(align = "center", columns = c(2, 3, 4)) |>
+  tab_style(
+    style = list(
+      cell_text(weight = "bold")
+      ),
+    locations = cells_body(
+      rows = bld_row
+    )
+  ) |>
+  tab_header(title = tbl_title) |>
+  as_latex()
+
+
+
+# Cleaning up
+rm(top_ret_dist_esc, bld_row, tbl_title)
+```
+
+```{r retention_sub3_preamble}
+# ... Retention Entering the Current School Year Was [avg_ret_now_v_prev] Average Compared to Previous Years
+
+now = focal_dist[fiscal_year == max(fiscal_year)]$lf_stayer
+prev = mean(focal_dist[fiscal_year != max(fiscal_year)]$lf_stayer)
+
+text$avg_ret_now_v_prev = 
+  case_when(now - prev > abt_threshold ~ "Above",
+            prev - now > abt_threshold ~ "Below",
+            TRUE ~ "About")
+
+# Some retention percentages to reference in the text
+c = focal_dist[fiscal_year == max(fiscal_year)]$lf_stayer
+p = focal_dist[fiscal_year == max(fiscal_year) - 1]$lf_stayer
+
+text$ret_cur_yr = percent(c, accuracy = 0.1)
+text$ret_prev_yr = percent(p, accuracy = 0.1)
+text$non_ret_cur_yr = percent((1-c), accuracy = 0.1)
+
+# This retention rate is [above/below/similar to] last year's retention...
+text$ret_cur_v_prev = case_when(
+  c - p > abt_threshold/10 ~ "greater than",
+  p - c > abt_threshold/10 ~ "lower than",
+  abs(c - p) < abt_threshold/10 ~ "similar to"
+)
+
+# Of those teachers who left...
+m = focal_dist[fiscal_year == max(fiscal_year)]$lf_mover
+s = focal_dist[fiscal_year == max(fiscal_year)]$lf_switcher
+e = focal_dist[fiscal_year == max(fiscal_year)]$lf_exiter
+
+text$of_leavers = case_when(
+  (m+s) > e ~ paste0("the majority (", percent((m+s), accuracy = 0.1), 
+                    ") worked in other school districts during the ",
+                    "2023-24 school year"),
+  e > (m+s) ~ paste0("the majority (", percent(e, accuracy = 0.1),
+                     ") left the Arkansas public education workforce ",
+                     "for the 2023-24 school year"),
+  e == (m+s) ~ paste0("roughly the same proportion (", percent(e, accuracy = 0.1),
+                      ") worked in other school districts during the ",
+                      "2023-24 school year as did leave the Arkansas ",
+                      "public education workforce"))
+
+# Of those who moved schools...
+text$of_movers = paste("Among the", percent(m+s, accuracy = 0.1), 
+                       "of teachers who moved districts,",
+                       percent(m, accuracy = 0.1), 
+                       "remained in teaching roles while",
+                       percent(s, accuracy = 0.1),
+                       "moved into non-teaching roles")
+
+rm(m, s, e, c, p, now, prev)
+
+# Adding in some counts
+dist = focal_dist[fiscal_year == max(fiscal_year)] |> as.list()
+```
+
+```{=tex}
+\newpage
+\subsection[2023-24 Retention in `r text$district`]{Retention Entering the 2023-24 School Year Was `r text$avg_ret_now_v_prev` Average Compared to Previous Years.}\label{retention-this-year}
+```
+Among `r text$district` teachers from the 2022-23 school year, `r text$ret_cur_yr` (`r dist$n_lf_stayer`) returned to work in district for the 2023-24 school year. **This retention rate is `r text$ret_cur_v_prev` last year's retention rate of `r text$ret_prev_yr`.**
+
+At the start of the current school year, `r text$non_ret_cur_yr` (`r dist$n_lf_switcher + dist$n_lf_exiter`) of `r text$district` teachers from the 2022-23 school year did not return to `r text$district` for the current school year. Of those who left, `r text$of_leavers`. `r text$of_movers`.
+
+\vspace{2em}
+
+```{r labor_outcomes_graph}
+#| fig-align: center
+#| fig-height: 5
+#| fig-width: 10
+#| out-width: 100%
+
+# Nice color palette
+pal = diverging_hcl(n = 4, palette = "Blue-Red 3")
+pal = pal[-2]
+names(pal) = c("Stayed in District", "Moved Districts", "Left AR Public Schools")
+
+# Making a graph
+focal_dist |>
+  as.data.frame() |>
+  mutate(lf_mover = lf_mover + lf_switcher) |>
+  select(district_name, esc, fiscal_year, pre_pandemic,
+        lf_stayer, lf_mover, lf_exiter) |>
+  pivot_longer(cols = lf_stayer:lf_exiter) |>
+  mutate(period = ifelse(pre_pandemic, "Before COVID", "Since COVID"),
+         name = case_when(name == "lf_stayer" ~ "Stayed in District",
+                            name == "lf_mover" ~ "Moved Districts",
+                            name == "lf_exiter" ~ "Left AR Public Schools"),
+         name = factor(name, levels = c("Left AR Public Schools",
+                                              "Moved Districts",
+                                              "Stayed in District")),
+         school_year = fiscal_year + 1991,
+         lab1 = ifelse(name == "Left AR Public Schools", 
+                       percent(value, accuracy = 0.1), ""),
+         lab2 = ifelse(name == "Moved Districts", 
+                       percent(value, accuracy = 0.1), ""),
+         lab3 = ifelse(name == "Stayed in District", 
+                       percent(value, accuracy = 0.1), "")) |>
+  ggplot(aes(x = school_year, y = value, fill = name)) +
+  geom_col() +
+  geom_text(aes(label = lab1), 
+            position = position_stack(vjust = 0.5),
+            color = "white", family = "roboto", size = 4, fontface = "bold") +
+  geom_text(aes(label = lab2), 
+            position = position_stack(vjust = 0.5),
+            color = "black", family = "roboto", size = 4, fontface = "bold") +
+  geom_text(aes(label = lab3, y = 0.61), 
+            color = "white", family = "roboto", size = 4, fontface = "bold") +
+  scale_y_continuous(labels = percent) +
+  scale_x_continuous(breaks = c(2017:2024)) +
+  #scale_x_continuous(breaks = c(2017:2024)) +
+  coord_cartesian(ylim = c(0.6, 1)) +
+  scale_fill_manual(values = pal) +
+  ylab("Percent of Prior Year Teachers") +
+  xlab("School Year") +
+  labs(title = "Teacher Retention Over Time",
+       subtitle = "2016-17 through 2023-24 School Years") +
+  theme_minimal() +
+  theme(text = element_text(family = "roboto", size = 12),
+        axis.text = element_text(color = "black", size = 12),
+        axis.title = element_text(color = "#424242", size = 10),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 12),
+        legend.position = "right")
+ggsave(filename = "99_tempfiles/fig2.pdf", width = 7, height = 4.25)
+
+rm(pal)
+```
+
+```{=tex}
+\vfill
+\begin{figure}
+  \centerfloat
+  \includegraphics[width = 1.2\textwidth]{99_tempfiles/fig2.pdf}
+\end{figure}
+\vfill
+```
+```{r retention_sub4_preamble}
+# Teacher Retention in [district] has [increased, decreased, stayed stable] since the start of the COVID-19 pandemic.
+prepan_avg = focal_dist[fiscal_year == min(fiscal_year)]$avg_pan_lf_stayer
+pstpan_avg = focal_dist[fiscal_year == max(fiscal_year)]$avg_pan_lf_stayer
+
+text$ret_pan_change = case_when(
+  pstpan_avg - prepan_avg > abt_threshold ~ "Increased",
+  prepan_avg - pstpan_avg > abt_threshold ~ "Decreased",
+  abs(pstpan_avg - prepan_avg) <= abt_threshold ~ "Remained Stable"
+)
+
+# The retention rate in [district] {X%} was [higher/lower/similar to] the retention rate for other school districts in the [ESC] {Y%} before the COVID-19 pandemic and [higher/lower/similar to] the retention rate for other school districts in Arkansas {Z%}.
+prepan_avg_esc = focal_dist[fiscal_year == min(fiscal_year)]$avg_pan_lf_stayer_esc
+prepan_avg_st =  focal_dist[fiscal_year == min(fiscal_year)]$avg_pan_lf_stayer_st
+
+text$dist_avg_ret_prepan = percent(prepan_avg, accuracy = 0.1)
+text$esc_avg_ret_prepan = percent(prepan_avg_esc, accuracy = 0.1)
+text$st_avg_ret_prepan = percent(prepan_avg_st, accuracy = 0.1)
+
+text$ret_dist_v_esc_prepan = case_when(
+  prepan_avg - prepan_avg_esc > abt_threshold ~ "higher than",
+  prepan_avg_esc - prepan_avg > abt_threshold ~ "lower than",
+  abs(prepan_avg - prepan_avg_esc) <= abt_threshold ~ "similar to"
+)
+
+text$ret_dist_v_st_prepan = case_when(
+  prepan_avg - prepan_avg_st > abt_threshold ~ "higher than",
+  prepan_avg_st - prepan_avg > abt_threshold ~ "lower than",
+  abs(prepan_avg - prepan_avg_st) <= abt_threshold ~ "similar to"
+)
+
+# Since the start of the COVID-19 pandemic, the retention rate in [district] has [increased to/decreased to/remained constant at] {X%} while the retention rate for other districts in [ESC] has [increased to/decreased to/remained constant at] to {Y%} and the retention rate for other districts in the state has [increased to/decreased to/remained constant at] to {Z%}.
+
+pstpan_avg_esc = focal_dist[fiscal_year == max(fiscal_year)]$avg_pan_lf_stayer_esc
+pstpan_avg_st =  focal_dist[fiscal_year == max(fiscal_year)]$avg_pan_lf_stayer_st
+
+text$dist_avg_ret_pstpan = percent(pstpan_avg, accuracy = 0.1)
+text$esc_avg_ret_pstpan = percent(pstpan_avg_esc, accuracy = 0.1)
+text$st_avg_ret_pstpan = percent(pstpan_avg_st, accuracy = 0.1)
+
+text$ret_dist_pre_v_pst_pan = case_when(
+  pstpan_avg - prepan_avg > abt_threshold ~ paste("increased by",
+                                                  percent(
+                                                    (pstpan_avg - prepan_avg),
+                                                    accuracy = 0.1)),
+  prepan_avg - pstpan_avg > abt_threshold ~ paste("decreased by",
+                                                   percent(
+                                                    (prepan_avg - pstpan_avg),
+                                                    accuracy = 0.1)),
+  abs(prepan_avg - pstpan_avg) <= abt_threshold ~ 
+    "remained relatively stable"
+)
+
+text$ret_esc_pre_v_pst_pan = case_when(
+  pstpan_avg_esc - prepan_avg_esc > abt_threshold ~ paste("increased by",
+                                                  percent(
+                                                    (pstpan_avg_esc -
+                                                       prepan_avg_esc),
+                                                    accuracy = 0.1)),
+  prepan_avg_esc - pstpan_avg_esc > abt_threshold ~ paste("decreased by",
+                                                   percent(
+                                                    (prepan_avg_esc -
+                                                       pstpan_avg_esc),
+                                                    accuracy = 0.1)),
+  abs(prepan_avg_esc - pstpan_avg_esc) <= abt_threshold ~ 
+    "remained relatively stable"
+)
+
+text$ret_st_pre_v_pst_pan = case_when(
+  pstpan_avg_st - prepan_avg_st > abt_threshold ~ paste("increased by",
+                                                  percent(
+                                                    (pstpan_avg_st -
+                                                       prepan_avg_st),
+                                                    accuracy = 0.1)),
+  prepan_avg_st - pstpan_avg_st > abt_threshold ~ paste("decreased by",
+                                                   percent(
+                                                    (prepan_avg_st -
+                                                       pstpan_avg_st),
+                                                    accuracy = 0.1)),
+  abs(prepan_avg_st - pstpan_avg_st) <= abt_threshold ~ 
+    "remained relatively stable"
+)
+```
+
+```{=tex}
+\newpage
+\subsection[Teacher Retention During COVID-19]{Teacher Retention in `r text$district` has `r text$ret_pan_change` Since the Start of the COVID-19 Pandemic.}\label{retention-during-covid}
+```
+During the 4 years prior to COVID, the retention rate in `r text$district` (`r text$dist_avg_ret_prepan`) was `r text$ret_dist_v_esc_prepan` the retention rate for school districts in the `r text$esc` ESC (`r text$esc_avg_ret_prepan`) before the COVID-19 pandemic and `r text$ret_dist_v_st_prepan` the retention rate for school districts in Arkansas (`r text$st_avg_ret_prepan`).
+
+Since the start of the COVID-19 pandemic, the retention rate in `r text$district` has `r text$ret_dist_pre_v_pst_pan` while the retention rate for districts in the `r text$esc` has `r text$ret_esc_pre_v_pst_pan` and the retention rate for districts across the state has `r text$ret_st_pre_v_pst_pan`.
+
+\vspace{2em}
+
+```{r retention_covid_comparisons}
+#| fig-align: center
+#| fig-height: 4
+#| fig-width: 8
+
+# Nice color palette
+pal = diverging_hcl(n = 4, palette = "Blue-Red 3")
+pal = pal[-2]
+names(pal) = c("Stayed in District", "Moved Districts", "Left AR Public Schools")
+
+# Making a graph
+focal_dist |>
+  as.data.frame() |>
+  mutate(avg_pan_lf_mover = avg_pan_lf_mover + avg_pan_lf_switcher,
+         avg_pan_lf_mover_esc = avg_pan_lf_mover_esc + avg_pan_lf_switcher_esc,
+         avg_pan_lf_mover_st = avg_pan_lf_mover_st + avg_pan_lf_switcher_st) |>
+  select(district_name, esc, pre_pandemic,
+        avg_pan_lf_stayer, avg_pan_lf_mover, avg_pan_lf_exiter,
+        avg_pan_lf_stayer_esc, avg_pan_lf_mover_esc, avg_pan_lf_exiter_esc,
+        avg_pan_lf_stayer_st, avg_pan_lf_mover_st, avg_pan_lf_exiter_st) |>
+  pivot_longer(cols = avg_pan_lf_stayer:avg_pan_lf_exiter_st) |>
+  unique() |>
+  mutate(period = ifelse(pre_pandemic, 
+                         "Before COVID\n(2017-2020)", 
+                         "Since COVID\n(2021-2024)"),
+         outcome = case_when(grepl("lf_stayer", name) ~ "Stayed in District",
+                             grepl("lf_mover", name) ~ "Moved Districts",
+                             grepl("lf_exiter", name) ~ "Left AR Public Schools"),
+         outcome = factor(outcome, levels = c("Left AR Public Schools",
+                                              "Moved Districts",
+                                              "Stayed in District")),
+         group = case_when(grepl("_esc$", name) ~ "ESC",
+                           grepl("_st$", name) ~ "State",
+                           TRUE ~ "District"),
+         lab1 = ifelse(outcome == "Left AR Public Schools", 
+                       percent(value, accuracy = 0.1), ""),
+         lab2 = ifelse(outcome == "Moved Districts", 
+                       percent(value, accuracy = 0.1), ""),
+         lab3 = ifelse(outcome == "Stayed in District", 
+                       percent(value, accuracy = 0.1), "")) |>
+  ggplot(aes(x = group, y = value, fill = outcome)) +
+  geom_col() +
+  geom_text(aes(label = lab1), 
+            position = position_stack(vjust = 0.5),
+            color = "white", family = "roboto", size = 4, fontface = "bold") +
+  geom_text(aes(label = lab2), 
+            position = position_stack(vjust = 0.5),
+            color = "black", family = "roboto", size = 4, fontface = "bold") +
+  geom_text(aes(label = lab3, y = 0.61), 
+            color = "white", family = "roboto", size = 4, fontface = "bold") +
+  scale_y_continuous(labels = percent) +
+  #scale_x_continuous(breaks = c(2017:2024)) +
+  coord_cartesian(ylim = c(0.6, 1)) +
+  scale_fill_manual(values = pal) +
+  ylab("Percent of Prior Year Teachers") +
+  #xlab("School Year") +
+  labs(title = "Teacher Retention Before and After COVID",
+       subtitle = "2016-17 through 2023-24 School Years") +
+  theme_minimal() +
+  theme(text = element_text(family = "roboto", size = 12),
+        axis.text = element_text(color = "black", size = 12),
+        axis.title = element_text(color = "#424242", size = 10),
+        axis.title.x = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.title = element_blank(),
+        legend.position = "right",
+        strip.placement = "outside") +
+  facet_grid(~period, scales = "free_x", space = "free", switch = "both")
+ggsave(filename = "99_tempfiles/fig3.pdf", width = 7, height = 4.25)
+
+rm(pal)
+```
+
+```{=tex}
+\vfill
+\begin{figure}
+  \centerfloat
+  \includegraphics[width = 1.2\textwidth]{99_tempfiles/fig3.pdf}
+\end{figure}
+\vfill
+
+\newpage
+```
+```{r compensation_preamble}
+# Cleaning up leftover bits
+rm(prepan_avg, prepan_avg_esc, prepan_avg_st, 
+   pstpan_avg, pstpan_avg_esc, pstpan_avg_st)
+
+# Loading salary data
+load("02_data/salary_data_prepared.RData")
+
+# Limit to TPS (obs. in the districts table)
+salary = salary[leaid %in% districts$district_lea]
+
+# Making the ESC variable match
+salary = salary |>
+  _[, esc := gsub(" ESC$", "", esc)] |>
+  _[, esc := gsub("^Dequeen", "De Queen", esc)] |>
+  _[, esc := gsub("^Ozark ", "Ozarks ", esc)] |>
+  _[, esc := gsub("^South Central$", "South Central Arkansas", esc)]
+
+# The Salary for Beginning Teachers in [DISTRICT] Has Increased by at least $XYZ for the 2023-24 School Year
+text$dist_ba_0exp_salary = comma(abs(diff(
+  salary[leaid == params$district_lea & exp == 0 & lane == "ba"]$salary)))
+                                  
+
+text$dist_ma_0exp_salary = comma(abs(diff(
+  salary[leaid == params$district_lea & exp == 0 & lane == "ma"]$salary)))
+
+# The salaries for experienced teachers have also increased during the 2023-24 school year
+# First getting beginning year teacher salaries in the same ESC, then cleaning
+dta = salary[esc == text$esc & exp == 0 & lane %chin% c("ba", "ma")] |>
+  _[, .(leaid, district_name, school_year, lane, salary)] |>
+  dcast(leaid + district_name + lane ~ school_year,
+        value.var = "salary") |>
+  _[, salary_increase := `24` - `23`] |>
+  dcast(leaid + district_name ~ lane,
+        value.var = c("24", "23", "salary_increase"))
+
+setorder(dta, district_name)
+
+colnames(dta)[3:6] = c("ba_24", "ma_24", "ba_23", "ma_23")
+
+# Now some general cleaning
+dta = dta  |>
+  _[, ba_23_rank := toOrdinal::toOrdinal(frank(-ba_23, ties.method = "min"))] |>
+  _[, ba_24_rank := toOrdinal::toOrdinal(frank(-ba_24, ties.method = "min"))] |>
+  _[, ma_23_rank := toOrdinal::toOrdinal(frank(-ma_23, ties.method = "min"))] |>
+  _[, ma_24_rank := toOrdinal::toOrdinal(frank(-ma_24, ties.method = "min"))] |>
+  _[, salary_inc_ba_rank := toOrdinal::toOrdinal(
+    frank(-salary_increase_ba, ties.method = "min"))] |>
+  _[, salary_inc_ma_rank := toOrdinal::toOrdinal(
+    frank(-salary_increase_ma, ties.method = "min"))] |>
+  _[, ba_24 := dollar(ba_24)] |>
+  _[, ma_24 := dollar(ma_24)] |>
+  _[, ba_23 := dollar(ba_23)] |>
+  _[, ma_23 := dollar(ma_23)] |>
+  _[, salary_increase_ba := dollar(salary_increase_ba)] |>
+  _[, salary_increase_ma := dollar(salary_increase_ma)] |>
+  _[, district_name := gsub("_", " ", district_name)] |>
+  _[, district_name := str_to_title(district_name)] |>
+  _[, district_name := gsub("Mccrory", "McCrory", district_name)]
+
+# For easy reference in the paragraph
+d = dta[leaid == params$district_lea] |> as.list()
+
+```
+
+```{=tex}
+
+\subsection[Beginning Teacher Compensation]{The Salaries for Beginning Teachers in `r text$district` Have Increased by \$`r text$dist_ba_0exp_salary` (BA) and \$`r text$dist_ma_0exp_salary` (MA) in 2023-24.}\label{beginning-teacher-compensation}
+```
+During the 2022-23 school year, beginning teachers in `r text$district` earned `r d$ba_23` if they held a bachelor's degree and `r d$ma_23` if they held a master's degree. These salaries were the `r d$ba_23_rank` and `r d$ma_23_rank` highest beginning teacher salaries in the `r text$esc`, respectively.
+
+Now, during the 2023-24 school year, beginning teachers in `r text$district` earn `r d$ba_24` if they hold a bachelor's degree and `r d$ma_24` if they hold a master's degree. Beginning teacher salaries in `r text$district` rank the `r d$ba_24_rank` (BA) and `r d$ma_24_rank` (MA) in highest salaries among districts in the `r text$esc` ESC.
+
+\vspace{1em}
+
+```{r entry_teacher_increase_table}
+#| include: true
+
+# Building some parameters before building the table
+bld_row = match(params$district_lea, dta$leaid)
+tbl_title = paste("Beginning Teacher Salaries in the", text$esc, "ESC")
+
+# And actually making the table
+gt(dta |> 
+     select(district_name, ba_23, ba_24, salary_increase_ba,
+            ma_23, ma_24, salary_increase_ma)) |>
+  cols_label(district_name = "District", 
+             ba_23 = "2022-23",
+             ba_24 = "2023-24",
+             salary_increase_ba = "Increase",
+             ma_23 = "2022-23",
+             ma_24 = "2023-24",
+             salary_increase_ma = "Increase") |>
+  tab_spanner(label = "Bachelor's Degree", columns = c(2:4)) |>
+  tab_spanner(label = "Master's Degree", columns = c(5:7)) |>
+  cols_align(align = "center", columns = c(2:7)) |>
+  tab_style(
+    style = list(
+      cell_text(weight = "bold")
+      ),
+    locations = cells_body(
+      rows = bld_row
+    )
+  ) |>
+  tab_header(title = tbl_title) |>
+  as_latex()
+
+```
+
+```{=tex}
+\newpage
+\subsection[Experienced Teacher Compensation]{The Salaries for Experienced Teachers Have Also Increased.}\label{experienced-teacher-compensation}
+```
+```{r exp_teacher_text}
+# First getting beginning year teacher salaries in the same ESC, then cleaning
+dta = salary[esc == text$esc & exp == 10 & lane %chin% c("ba", "ma")] |>
+  _[, .(leaid, district_name, school_year, lane, salary)] |>
+  dcast(leaid + district_name + lane ~ school_year,
+        value.var = "salary") |>
+  _[, salary_increase := `24` - `23`] |>
+  dcast(leaid + district_name ~ lane,
+        value.var = c("24", "23", "salary_increase"))
+
+setorder(dta, district_name)
+
+colnames(dta)[3:6] = c("ba_24", "ma_24", "ba_23", "ma_23")
+
+# Now some general cleaning
+dta = dta  |>
+  _[, ba_23_rank := toOrdinal::toOrdinal(frank(-ba_23, ties.method = "min"))] |>
+  _[, ba_24_rank := toOrdinal::toOrdinal(frank(-ba_24, ties.method = "min"))] |>
+  _[, ma_23_rank := toOrdinal::toOrdinal(frank(-ma_23, ties.method = "min"))] |>
+  _[, ma_24_rank := toOrdinal::toOrdinal(frank(-ma_24, ties.method = "min"))] |>
+  _[, salary_inc_ba_rank := toOrdinal::toOrdinal(
+    frank(-salary_increase_ba, ties.method = "min"))] |>
+  _[, salary_inc_ma_rank := toOrdinal::toOrdinal(
+    frank(-salary_increase_ma, ties.method = "min"))] |>
+  _[, ba_24 := dollar(ba_24)] |>
+  _[, ma_24 := dollar(ma_24)] |>
+  _[, ba_23 := dollar(ba_23)] |>
+  _[, ma_23 := dollar(ma_23)] |>
+  _[, salary_increase_ba := dollar(salary_increase_ba)] |>
+  _[, salary_increase_ma := dollar(salary_increase_ma)] |>
+  _[, district_name := gsub("_", " ", district_name)] |>
+  _[, district_name := str_to_title(district_name)] |>
+  _[, district_name := gsub("Mccrory", "McCrory", district_name)]
+
+# For easy reference in the paragraph
+d = dta[leaid == params$district_lea] |> as.list()
+```
+
+Teachers with ten years of experience and a bachelor's degree earned a base salary of `r d$ba_23` for the 2022-23 school year and now earn `r d$ba_24` during the 2023-24 school year, an increase of `r d$salary_increase_ba`. Similarly, teachers with ten years of experience and a master's degree earned a base salary of `r d$ma_23` last year and now earn `r d$ma_24`, an increase of `r d$salary_increase_ma`.
+
+As a result of these increases and increases in other districts, `r text$district` now pays the `r d$ba_24_rank` (BA) and `r d$ma_24_rank` (MA) highest salaries for teachers with ten years of experience in the `r text$esc`.
+
+\vspace{1em}
+
+```{r exp_teacher_table}
+#| include: true
+
+# Building some parameters before building the table
+bld_row = match(params$district_lea, dta$leaid)
+tbl_title = paste("Experienced (10 years) Teacher Salaries in the", text$esc, "ESC")
+
+# And actually making the table
+gt(dta |> 
+     select(district_name, ba_23, ba_24, salary_increase_ba,
+            ma_23, ma_24, salary_increase_ma)) |>
+  cols_label(district_name = "District", 
+             ba_23 = "2022-23",
+             ba_24 = "2023-24",
+             salary_increase_ba = "Increase",
+             ma_23 = "2022-23",
+             ma_24 = "2023-24",
+             salary_increase_ma = "Increase") |>
+  tab_spanner(label = "Bachelor's Degree", columns = c(2:4)) |>
+  tab_spanner(label = "Master's Degree", columns = c(5:7)) |>
+  cols_align(align = "center", columns = c(2:7)) |>
+  tab_style(
+    style = list(
+      cell_text(weight = "bold")
+      ),
+    locations = cells_body(
+      rows = bld_row
+    )
+  ) |>
+  tab_header(title = tbl_title) |>
+  as_latex()
+```
+
+```{r staffing_ratios}
+# Load data
+load("02_data/staffing_ratio_data.RData")
+
+# Subset
+staffing = staffing[school_year == 2024 & esc == text$esc]
+
+## Conditional text stuff
+# The student-teacher ratio in [DISTRICT] is [lower/higher/average] for the [ESC]
+av = mean(staffing$stu_tch_ratio)
+fd = staffing[as.numeric(lea) == params$district_lea]$stu_tch_ratio
+
+text$staffing_comp_esc_avg = case_when(abs(av - fd) < 1 ~ "Average",
+                                    av - fd >= 1 ~ "Below",
+                                    av - fd <= -1 ~  "Above")
+
+rm(av, fd)
+
+# In [DISTRICT], there are about [X] students for every teacher and 
+# [Y] students for every licensed-non-teacher (e.g. instructional coach, principal, etc.),
+# and [Z] students for every classified employee.
+text$stu_tch_ratio = staffing[as.numeric(lea) == params$district_lea]$stu_tch_ratio
+text$stu_non_tch_ratio = staffing[as.numeric(lea) == params$district_lea]$stu_non_tch_ratio
+text$stu_classif_ratio = staffing[as.numeric(lea) == params$district_lea]$stu_classif_ratio
+
+```
+
+```{=tex}
+\newpage
+\subsection[Staffing Ratios]{The Student-Teacher Ratio in `r text$district` is `r text$staffing_comp_esc_avg` for the `r text$esc` ESC}\label{staffing-ratios}
+```
+Staffing ratios play a major role in district budgets. Salaries are typically a district's largest expenditure and the the amount of state funding a district receives is based upon student enrollment. The school funding matrix makes assumptions about the student-teacher ratio for an average district (between 20 and 25 students per teacher). However, we find that the majority of public school districts in Arkansas choose to maintain lower staffing ratio.
+
+In `r text$district`, there are about `r text$stu_tch_ratio` students for every teacher, `r text$stu_non_tch_ratio` students for every licensed-non-teacher (e.g. instructional coach, principal, etc.), and `r text$stu_classif_ratio` students for every classified employee.
+
+\vspace{1em}
+
+```{r print_staff_ratio_table}
+#| include: true
+
+staffing = staffing |>
+  arrange(district_name)
+
+# Building some parameters before building the table
+bld_row = match(params$district_lea, as.numeric(staffing$lea))
+tbl_title = paste("Staffing Ratios in the", text$esc, "ESC")
+
+# Create table
+staffing |>
+  mutate(district_name = gsub(" School District$", "", district_name),
+         enrollment = scales::comma(enrollment)) |>
+  select(district_name,
+         stu_tch_ratio,
+         stu_non_tch_ratio,
+         stu_classif_ratio) |>
+  #arrange(district_name) |>
+  gt() |>
+  cols_label(district_name = "District",
+             stu_tch_ratio = "Teachers",
+             stu_non_tch_ratio = "Other",
+             stu_classif_ratio = "Classified") |>
+  tab_spanner(label = "Licensed Staff", columns = c(2:3)) |>
+  cols_align(align = "center", columns = c(2:4)) |>
+  tab_style(
+    style = list(
+      cell_text(weight = "bold")
+      ),
+    locations = cells_body(
+      rows = bld_row
+    )
+  ) |>
+  tab_header(title = tbl_title,
+             subtitle = "2023-24 School Year") |>
+  as_latex()
+
+```
+
+```{=tex}
+\newpage
+\subsection[Recommendations]{Recommendations for Teacher Retention in `r text$district`}\label{recommendations}
+```
+Maintaining a stable and effective teaching workforce is a ongoing challenge for many districts in Arkansas. This report has highlighted the teacher workforce in `r text$district` in comparison with teachers across the state and in the `r text$esc` ESC. We hope that the data provided here can foster conversations with district leadership and school board members to identify ways to better recruit and retain teachers in `r text$district`.
+
+Going forward, there are opportunities for districts to make substantial changes to their retention and compensation policies to better retain effective teachers and support student learning. Specifically, we encourage all districts to consider:
+
+<div>
+
+1.  **Teacher working conditions** play a major role in both how satisfied existing teachers are and how likely a potential teacher is to accept a job offer. Surveys indicate that [teachers prefer working for principals who take a supportive approach](https://edworkingpapers.com/sites/default/files/Teacher%20Utility%20and%20Compensation%20Structure%20v14_0.pdf) rather than "hands off" approach. Districts may wish to evaluate their current structures for mentoring and supporting teachers with the aim of improving recruitment and retention.
+
+2.  **Moving away from salary schedules** may help recruit more effective teachers. Districts in Wisconsin that moved from traditional salary schedules towards more flexible pay schemes (e.g., merit pay, individual negotiations, etc.) were [better able to recruit teachers who were highly effective at boosting student learning](https://www.educationnext.org/wisconsin-act-10-flexible-pay-impact-teacher-labor-markets/). The LEARNS Act both introduced a new \$50,000 minimum teacher salary and has also given districts the ability to be more flexible with how they structure teacher compensation. Districts in Arkansas may wish to consider moving away from a traditional salary schedule to more innovative ways to compensate their teachers.
+
+3.  **Reexamine staffing ratios** may be required to ensure that districts can better recruit and retain teachers. While many families and teachers have a preference for smaller class sizes, it is important to note that smaller student-teacher ratios might result in a district struggling to offer salaries that are competitive with nearby districts. There is no perfect answer or "correct" student-teacher ratio, so we encourage districts to think how their staffing ratios compare to other nearby districts.
+
+</div>
